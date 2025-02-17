@@ -7,10 +7,8 @@ import (
 	"errors"
 	"flag"
 	"io"
-	"io/fs"
 	"log"
 	"net/http"
-	"path"
 	"strings"
 	"time"
 )
@@ -69,105 +67,29 @@ func NewReader(outer, inner string) (*ZipTarReader, error) {
 	}, nil
 }
 
-type fileInfo struct {
-	name    string
-	size    int64
-	mode    fs.FileMode
-	modTime time.Time
-	isDir   bool
-	sys     any
-}
-
-func (fi *fileInfo) Name() string       { return fi.name }
-func (fi *fileInfo) Size() int64        { return fi.size }
-func (fi *fileInfo) Mode() fs.FileMode  { return fi.mode }
-func (fi *fileInfo) ModTime() time.Time { return fi.modTime }
-func (fi *fileInfo) IsDir() bool        { return fi.isDir }
-func (fi *fileInfo) Sys() any           { return fi.sys }
-
-var (
-	errMissingRead    = errors.New("io.File directory missing Read method")
-	errMissingSeek    = errors.New("io.File directory missing Seek method")
-	errMissingReadDir = errors.New("io.File directory missing ReadDir method")
-)
-
-type memFile struct {
-	fi fileInfo
-	br *bytes.Reader
-}
-
-func (f *memFile) Close() error { return nil }
-
-func (f *memFile) Read(b []byte) (int, error) {
-	return f.br.Read(b)
-}
-
-func (f *memFile) Seek(offset int64, whence int) (int64, error) {
-	return f.br.Seek(offset, whence)
-}
-
-func (f *memFile) Readdir(count int) ([]fs.FileInfo, error) {
-	return nil, errMissingReadDir
-}
-
-func (f *memFile) Stat() (fs.FileInfo, error) { return &f.fi, nil }
-
-type memDir struct {
-	fi fileInfo
-}
-
-func (d *memDir) Close() error { return nil }
-
-func (d *memDir) Read(b []byte) (int, error) {
-	return 0, errMissingRead
-}
-
-func (d *memDir) Seek(offset int64, whence int) (int64, error) {
-	return 0, errMissingSeek
-}
-
-func (d *memDir) Readdir(count int) ([]fs.FileInfo, error) {
-	return nil, errMissingReadDir
-}
-
-func (d *memDir) Stat() (fs.FileInfo, error) { return &d.fi, nil }
-
-func (ztr *ZipTarReader) Open(name string) (http.File, error) {
-	if _, ok := ztr.dirs[name]; ok {
-		return &memDir{
-			fi: fileInfo{
-				name:    name,
-				size:    0,
-				mode:    0555,
-				modTime: time.Now(),
-				isDir:   true,
-				sys:     nil,
-			},
-		}, nil
+func (ztr *ZipTarReader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	name := r.URL.Path
+	if data, ok := ztr.files[name]; ok {
+		http.ServeContent(w, r, name, time.Now(), bytes.NewReader(data))
+		return
 	}
-	data, ok := ztr.files[name]
-	if !ok {
-		name = path.Join(name, "index.html")
-		data, ok = ztr.files[name]
-		if !ok {
-			return nil, fs.ErrNotExist
+	// redirect to directory if available
+	if !strings.HasSuffix(name, "/") {
+		if _, ok := ztr.dirs[name+"/"]; !ok {
+			http.NotFound(w, r)
+			return
 		}
+		r.URL.Path += "/"
+		http.Redirect(w, r, r.URL.String(), http.StatusMovedPermanently)
+		return
 	}
-	return &memFile{
-		fi: fileInfo{
-			name:    name,
-			size:    int64(len(data)),
-			mode:    0666,
-			modTime: time.Now(),
-			isDir:   false,
-			sys:     nil,
-		},
-		br: bytes.NewReader(data),
-	}, nil
-}
-
-func archiveToFS(outer, inner string) (http.FileSystem, error) {
-	return NewReader(outer, inner)
+	// serve index.html
+	name += "index.html"
+	if data, ok := ztr.files[name]; ok {
+		http.ServeContent(w, r, name, time.Now(), bytes.NewReader(data))
+		return
+	}
+	http.NotFound(w, r)
 }
 
 func main() {
@@ -176,11 +98,12 @@ func main() {
 	flag.StringVar(&archiveNameInner, "inner", archiveNameInner, `name of inner archive`)
 	flag.Parse()
 
-	fsys, err := archiveToFS(archiveNameOuter, archiveNameInner)
+	handler, err := NewReader(archiveNameOuter, archiveNameInner)
+	//fsys, err := archiveToFS(archiveNameOuter, archiveNameInner)
 	if err != nil {
 		log.Fatalf("failed to open the archive: %s", err)
 	}
-	handler := http.FileServer(fsys)
+	//handler := http.FileServer(fsys)
 	log.Printf("listening on %s", httpAddr)
 	if err := http.ListenAndServe(httpAddr, handler); err != nil {
 		log.Fatal(err)
