@@ -8,6 +8,7 @@ import (
 	"flag"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -98,14 +99,22 @@ func main() {
 	flag.StringVar(&archiveNameInner, "inner", archiveNameInner, `name of inner archive`)
 	flag.Parse()
 
+	host, port, err := net.SplitHostPort(httpAddr)
+	if err != nil {
+		log.Fatalf("invalid addr: %s", err)
+	}
+	if host == "" {
+		host = "localhost"
+	}
+	addr := net.JoinHostPort(host, port)
+
 	handler, err := NewReader(archiveNameOuter, archiveNameInner)
-	//fsys, err := archiveToFS(archiveNameOuter, archiveNameInner)
 	if err != nil {
 		log.Fatalf("failed to open the archive: %s", err)
 	}
-	//handler := http.FileServer(fsys)
-	log.Printf("listening on %s", httpAddr)
-	if err := http.ListenAndServe(httpAddr, handler); err != nil {
+
+	log.Printf("hosting %s now. please open http://%s/ with your browser", archiveNameOuter, addr)
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatal(err)
 	}
 }
