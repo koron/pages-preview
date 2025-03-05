@@ -1,3 +1,3 @@
-module github.com/pages-preview/pages-preview
+module github.com/koron/pages-preview
 
-go 1.23.6
+go 1.23.7
