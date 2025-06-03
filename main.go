@@ -16,7 +16,7 @@ import (
 
 var (
 	httpAddr         = "localhost:8080"
-	archiveNameOuter = "githut-pages.zip"
+	archiveNameOuter = "github-pages.zip"
 	archiveNameInner = "artifact.tar"
 )
 
