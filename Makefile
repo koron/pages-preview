@@ -2,7 +2,7 @@ TEST_PACKAGE ?= ./...
 
 .PHONY: build
 build:
-	go build -gcflags '-e' .
+	go build -gcflags '-e'
 
 .PHONY: test
 test:
@@ -38,5 +38,8 @@ clean:
 	go clean
 	rm -f tags
 	rm -f tmp/_cover.out tmp/cover.html
+
+list-upgradable-modules:
+	@go list -m -u -f '{{if .Update}}{{.Path}} {{.Version}} [{{.Update.Version}}]{{end}}' all
 
 # based on: github.com/koron-go/_skeleton/Makefile
