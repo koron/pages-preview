@@ -13,11 +13,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/koron-go/ctxsrv"
 	"github.com/koron/pages-preview/internal/github"
 )
 
@@ -157,7 +159,6 @@ func run() error {
 			return fmt.Errorf("failed to download the artifact from the action: %w", err)
 		}
 		if tmpDir != "" {
-			// TODO: trap Ctrl-C and remove tempdir
 			defer os.RemoveAll(tmpDir)
 		}
 		archiveNameOuter = outerName
@@ -169,7 +170,14 @@ func run() error {
 	}
 
 	log.Printf("hosting %s now. please open http://%s/ with your browser", archiveNameOuter, addr)
-	return http.ListenAndServe(addr, handler)
+	return listenAndServe(addr, handler)
+}
+
+func listenAndServe(addr string, handler http.Handler) error {
+	// Capture Ctrl-C to ensure tmpdir is deleted
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	return ctxsrv.HTTP(&http.Server{Addr: addr, Handler: handler}).ServeWithContext(ctx)
 }
 
 func main() {
