@@ -123,7 +123,7 @@ func downloadActionArtifactTemporary(actionURL, artifactName string) (tmpDir, ou
 		return "", "", err
 	}
 	name := filepath.Join(tmpdir, defaultName)
-	log.Printf("downloading an articat to: %s", name)
+	log.Printf("downloading the artifact to the temporary directory: %s", tmpdir)
 
 	// TODO: show the progress of the download
 	err = a.Download(context.Background(), name)
@@ -169,7 +169,7 @@ func run() error {
 		return fmt.Errorf("failed to open the archive: %w", err)
 	}
 
-	log.Printf("hosting %s now. please open http://%s/ with your browser", archiveNameOuter, addr)
+	log.Printf("hosting the pages now. please open http://%s/ with your browser", addr)
 	return listenAndServe(addr, handler)
 }
 
