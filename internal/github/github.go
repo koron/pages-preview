@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/koron-go/jsonhttpc"
+	"github.com/koron/pages-preview/internal/progress"
 )
 
 var defaultClient *jsonhttpc.Client
@@ -95,6 +96,19 @@ func (a *Artifact) Download(ctx context.Context, name string) error {
 		return err
 	}
 	defer f.Close()
-	_, err = io.Copy(f, resp.Body)
+	p := progress.New("downloading...", a.SizeInBytes)
+	p.Proceed(0)
+	progressWriter := writerFunc(func(d []byte) (int, error) {
+		n, err := f.Write(d)
+		p.Proceed(n)
+		return n, err
+	})
+	_, err = io.Copy(progressWriter, resp.Body)
 	return err
+}
+
+type writerFunc func(p []byte) (n int, err error)
+
+func (f writerFunc) Write(p []byte) (n int, err error) {
+	return f(p) // underlying function call
 }

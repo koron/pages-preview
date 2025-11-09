@@ -125,7 +125,6 @@ func downloadActionArtifactTemporary(actionURL, artifactName string) (tmpDir, ou
 	name := filepath.Join(tmpdir, defaultName)
 	log.Printf("downloading the artifact to the temporary directory: %s", tmpdir)
 
-	// TODO: show the progress of the download
 	err = a.Download(context.Background(), name)
 	if err != nil {
 		defer os.RemoveAll(tmpdir)
