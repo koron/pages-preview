@@ -4,19 +4,30 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+
+	"github.com/koron-go/ctxsrv"
+	"github.com/koron/pages-preview/internal/github"
 )
+
+const defaultName = "github-pages.zip"
 
 var (
 	httpAddr         = "localhost:8080"
-	archiveNameOuter = "github-pages.zip"
+	archiveNameOuter string
 	archiveNameInner = "artifact.tar"
 )
 
@@ -93,28 +104,91 @@ func (ztr *ZipTarReader) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-func main() {
+var actionURLMx = regexp.MustCompile(`https://github.com/([^/]+)/([^/]+)/actions/runs/(\d+)`)
+
+// downloadActionArtifactTemporary downloads github-pages.zip directly from GHA artifacts.
+func downloadActionArtifactTemporary(actionURL, artifactName string) (tmpDir, outerName string, err error) {
+	m := actionURLMx.FindStringSubmatch(actionURL)
+	if m == nil {
+		return "", "", fmt.Errorf("invalid actions URL: %s", actionURL)
+	}
+
+	token := os.Getenv("PAGES_PREVIEW_GITHUB_TOKEN")
+	if token == "" {
+		return "", "", errors.New("authentication token is required for direct loading. set it in the PAGES_PREVIEW_GITHUB_TOKEN environment variable")
+	}
+	github.SetToken(token)
+
+	owner, repo, runID := m[1], m[2], m[3]
+	a, err := github.GetArtifact(context.Background(), owner, repo, runID, artifactName)
+	if err != nil {
+		return "", "", err
+	}
+
+	tmpdir, err := os.MkdirTemp("", "pages-pareview")
+	if err != nil {
+		return "", "", err
+	}
+	name := filepath.Join(tmpdir, defaultName)
+	log.Printf("downloading the artifact to the temporary directory: %s", tmpdir)
+
+	err = a.Download(context.Background(), name)
+	if err != nil {
+		defer os.RemoveAll(tmpdir)
+		return "", "", err
+	}
+
+	return tmpdir, name, nil
+}
+
+func run() error {
 	flag.StringVar(&httpAddr, "addr", httpAddr, `HTTP server listen address`)
-	flag.StringVar(&archiveNameOuter, "outer", archiveNameOuter, `name of outer archive`)
+	flag.StringVar(&archiveNameOuter, "outer", defaultName, `name of outer archive`)
 	flag.StringVar(&archiveNameInner, "inner", archiveNameInner, `name of inner archive`)
 	flag.Parse()
 
 	host, port, err := net.SplitHostPort(httpAddr)
 	if err != nil {
-		log.Fatalf("invalid addr: %s", err)
+		return fmt.Errorf("invalid addr: %w", err)
 	}
 	if host == "" {
 		host = "localhost"
 	}
 	addr := net.JoinHostPort(host, port)
 
-	handler, err := NewReader(archiveNameOuter, archiveNameInner)
-	if err != nil {
-		log.Fatalf("failed to open the archive: %s", err)
+	if flag.NArg() > 0 {
+		if flag.NArg() >= 2 {
+			return errors.New("too many arguments. required zero or one")
+		}
+		tmpDir, outerName, err := downloadActionArtifactTemporary(flag.Arg(0), archiveNameOuter)
+		if err != nil {
+			return fmt.Errorf("failed to download the artifact from the action: %w", err)
+		}
+		if tmpDir != "" {
+			defer os.RemoveAll(tmpDir)
+		}
+		archiveNameOuter = outerName
 	}
 
-	log.Printf("hosting %s now. please open http://%s/ with your browser", archiveNameOuter, addr)
-	if err := http.ListenAndServe(addr, handler); err != nil {
+	handler, err := NewReader(archiveNameOuter, archiveNameInner)
+	if err != nil {
+		return fmt.Errorf("failed to open the archive: %w", err)
+	}
+
+	log.Printf("hosting the pages now. please open http://%s/ with your browser", addr)
+	return listenAndServe(addr, handler)
+}
+
+func listenAndServe(addr string, handler http.Handler) error {
+	// Capture Ctrl-C to ensure tmpdir is deleted
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+	return ctxsrv.HTTP(&http.Server{Addr: addr, Handler: handler}).ServeWithContext(ctx)
+}
+
+func main() {
+	err := run()
+	if err != nil {
 		log.Fatal(err)
 	}
 }
