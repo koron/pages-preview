@@ -16,7 +16,11 @@ import (
 	"github.com/koron/pages-preview/internal/progress"
 )
 
-var defaultClient *jsonhttpc.Client
+var token string
+
+func SetToken(newToken string) {
+	token = newToken
+}
 
 func Header(h http.Header) http.Header {
 	if h == nil {
@@ -24,16 +28,10 @@ func Header(h http.Header) http.Header {
 	}
 	h.Set("Accept", "application/vnd.github+json")
 	h.Set("X-GitHub-Api-Version", "2022-11-28")
-	// FIXME: Improved the way to obtain tokens
-	if s := os.Getenv("GITHUB_TOKEN"); s != "" {
-		h.Set("Authorization", "Bearer "+s)
+	if token != "" {
+		h.Set("Authorization", "Bearer "+token)
 	}
 	return h
-}
-
-func init() {
-	defaultClient = jsonhttpc.New(nil)
-	defaultClient.WithHeader(Header(nil))
 }
 
 type Artifact struct {
@@ -57,6 +55,12 @@ type ArtifactList struct {
 
 var ErrNoArtifactsFound = errors.New("no artifacts found")
 
+func getJSONClient() *jsonhttpc.Client {
+	c := jsonhttpc.New(nil)
+	c.WithHeader(Header(nil))
+	return c
+}
+
 func GetArtifact(ctx context.Context, owner, repo, runID, artifactName string) (*Artifact, error) {
 	name, ext := artifactName, path.Ext(artifactName)
 	if len(ext) > 0 {
@@ -65,7 +69,7 @@ func GetArtifact(ctx context.Context, owner, repo, runID, artifactName string) (
 	}
 	u := fmt.Sprintf("https://api.github.com/repos/%s/%s/actions/runs/%s/artifacts", owner, repo, runID)
 	var list ArtifactList
-	err := defaultClient.Do(ctx, "GET", u, nil, &list)
+	err := getJSONClient().Do(ctx, "GET", u, nil, &list)
 	if err != nil {
 		return nil, err
 	}

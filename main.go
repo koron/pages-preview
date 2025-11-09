@@ -112,6 +112,13 @@ func downloadActionArtifactTemporary(actionURL, artifactName string) (tmpDir, ou
 	if m == nil {
 		return "", "", fmt.Errorf("invalid actions URL: %s", actionURL)
 	}
+
+	token := os.Getenv("PAGES_PREVIEW_GITHUB_TOKEN")
+	if token == "" {
+		return "", "", errors.New("authentication token is required for direct loading. set it in the PAGES_PREVIEW_GITHUB_TOKEN environment variable")
+	}
+	github.SetToken(token)
+
 	owner, repo, runID := m[1], m[2], m[3]
 	a, err := github.GetArtifact(context.Background(), owner, repo, runID, artifactName)
 	if err != nil {
