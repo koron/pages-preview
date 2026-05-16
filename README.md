@@ -19,7 +19,7 @@ Or download pre-compiled binary from [latest](https://github.com/koron/pages-pre
 
 ## Getting started
 
-Running the following command will allow you to preview the downloaded ./github-pages.zip at <http://localhost:8080/>. 
+Running the following command will allow you to preview the downloaded ./github-pages.zip at <http://localhost:8080/>.
 
 ```console
 $ pages-preview
